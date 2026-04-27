@@ -11,7 +11,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio dev",
     "prisma:reset": "prisma migrate reset --force",
-    "seed": "ts-node prisma/seed.ts",
+    "seed": "node seed.js",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit"
