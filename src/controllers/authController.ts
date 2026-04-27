@@ -4,9 +4,9 @@ import prisma from "../services/db";
 import { TokenService } from "../services/token";
 import crypto from "crypto";
 
-const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
-const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
-const GITHUB_CALLBACK_URL = process.env.GITHUB_CALLBACK_URL;
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
+const CALLBACK_URL = process.env.CALLBACK_URL;
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 export interface GitHubUser {
@@ -60,8 +60,8 @@ export async function githubOAuthRedirect(req: Request, res: Response) {
 
     const url =
       `https://github.com/login/oauth/authorize?` +
-      `client_id=${GITHUB_CLIENT_ID}` +
-      `&redirect_uri=${encodeURIComponent(GITHUB_CALLBACK_URL || "")}` +
+      `client_id=${CLIENT_ID}` +
+      `&redirect_uri=${encodeURIComponent(CALLBACK_URL || "")}` +
       `&state=${state}` +
       `&code_challenge=${codeChallenge}` +
       `&code_challenge_method=S256` +
@@ -116,10 +116,10 @@ export async function githubOAuthCallback(req: Request, res: Response) {
     const tokenResponse = await axios.post(
       "https://github.com/login/oauth/access_token",
       {
-        client_id: GITHUB_CLIENT_ID,
-        client_secret: GITHUB_CLIENT_SECRET,
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
         code,
-        redirect_uri: GITHUB_CALLBACK_URL,
+        redirect_uri: CALLBACK_URL,
         state,
         code_verifier: codeVerifier,
       },

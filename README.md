@@ -311,9 +311,9 @@ ACCESS_TOKEN_EXPIRES=180
 REFRESH_TOKEN_EXPIRES=300
 
 # GitHub OAuth
-GITHUB_CLIENT_ID=your_client_id_here
-GITHUB_CLIENT_SECRET=your_client_secret_here
-GITHUB_CALLBACK_URL=http://185.200.244.215:9400/auth/github/callback
+CLIENT_ID=your_client_id_here
+CLIENT_SECRET=your_client_secret_here
+CALLBACK_URL=http://185.200.244.215:9400/auth/github/callback
 
 # Frontend URL
 FRONTEND_URL=http://localhost:3000
