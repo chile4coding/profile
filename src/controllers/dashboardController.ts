@@ -15,7 +15,7 @@ interface AgeGroupStat {
 export async function getDashboardStats(req: Request, res: Response) {
   try {
     // Total users
-    const totalUsers = await prisma.user.count();
+    const totalProfiles = await prisma.profile.count();
 
     // Total profiles by gender
     const genderStats = await prisma.profile.groupBy({
@@ -59,7 +59,7 @@ export async function getDashboardStats(req: Request, res: Response) {
     return res.status(200).json({
       status: "success",
       data: {
-        totalUsers,
+        totalUsers: totalProfiles,
         totalMale,
         totalFemale,
         totalChildren,
