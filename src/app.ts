@@ -77,9 +77,9 @@ app.get("/health", (req: Request, res: Response) => {
 });
 app.use(apiLimiter);
 // All profile routes require authentication
-app.use(authenticateSession);
-app.use("/api", profileRoutes);
-app.use("/api", dashboardRoutes);
-app.use("/api/user", userRoutes);
+
+app.use("/api", authenticateSession, profileRoutes);
+app.use("/api", authenticateSession, dashboardRoutes);
+app.use("/api/user", authenticateSession  , userRoutes);
 
 export default app;
