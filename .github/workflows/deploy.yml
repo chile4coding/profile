@@ -61,21 +61,6 @@ jobs:
     needs: [lint, typecheck, build]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: insighta_labs
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -91,13 +76,6 @@ jobs:
 
       - name: Generate Prisma Client
         run: npx prisma generate
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-      - name: Run database migrations
-        run: npx prisma migrate deploy
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Build TypeScript
         run: npm run build
@@ -154,7 +132,7 @@ jobs:
           timeout: 600s
           script: |
             cd ${{ secrets.SERVER_PATH }}
-            npm install --only=production
+            npm ci
             npx prisma generate
             npx prisma migrate deploy
 
