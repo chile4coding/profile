@@ -16,6 +16,9 @@ jobs:
           node-version: "20"
           cache: "npm"
       - run: npm ci
+      - run: npx prisma generate
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/insighta_test?schema=public
       - run: npm run lint
 
   typecheck:
@@ -27,6 +30,9 @@ jobs:
           node-version: "20"
           cache: "npm"
       - run: npm ci
+      - run: npx prisma generate
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/insighta_test?schema=public
       - run: npm run typecheck
 
   build:
@@ -38,4 +44,7 @@ jobs:
           node-version: "20"
           cache: "npm"
       - run: npm ci
+      - run: npx prisma generate
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/insighta_test?schema=public
       - run: npm run build
