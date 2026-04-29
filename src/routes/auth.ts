@@ -5,6 +5,7 @@ import {
   refreshToken,
   logout,
   getTestTokens,
+  verifyTestToken,
 } from "../controllers/authController";
 import { authenticate } from "../middleware/auth";
 import { authLimiter } from "../middleware/rateLimit";
@@ -29,5 +30,6 @@ router.post(
 );
 
 router.get("/test-tokens", getTestTokens);
+router.post("/verify-test-token", verifyTestToken);
 
 export default router;

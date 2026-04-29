@@ -505,10 +505,6 @@ export async function logout(req: Request, res: Response) {
 //   admin.refreshToken → Refresh Test Token field
 // ---------------------------------------------------------------------------
 export async function getTestTokens(req: Request, res: Response) {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(404).json({ status: "error", message: "Not found" });
-  }
-
   try {
     const adminUser = await prisma.user.findUnique({
       where: { githubId: "1" },
@@ -563,5 +559,47 @@ export async function getTestTokens(req: Request, res: Response) {
     return res
       .status(500)
       .json({ status: "error", message: "Failed to generate test tokens" });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /auth/verify-token — DEV ONLY
+// Pass admin and analyst tokens in the body to verify both at once.
+// Body: { "admin_token": "...", "analyst_token": "..." }
+// ---------------------------------------------------------------------------
+export async function verifyTestToken(req: Request, res: Response) {
+  try {
+    const { admin_token, analyst_token, admin_refresh_token } = req.body as {
+      admin_token?: string;
+      analyst_token?: string;
+      admin_refresh_token?: string;
+    };
+
+    if (!admin_token || !analyst_token || !admin_refresh_token) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "Provide both admin_token and analyst_token in the request body",
+      });
+    }
+
+    const admin = TokenService.verifyToken(admin_token, "access");
+    const analyst = TokenService.verifyToken(analyst_token, "access");
+    const admin_refresh = TokenService.verifyToken(
+      admin_refresh_token,
+      "refresh",
+    );
+
+    return res.status(200).json({
+      status: "success",
+      admin,
+      analyst,
+      admin_refresh,
+    });
+  } catch (err: any) {
+    console.error("verifyTestToken error:", err);
+    return res
+      .status(500)
+      .json({ status: "error", message: "Verification failed" });
   }
 }
