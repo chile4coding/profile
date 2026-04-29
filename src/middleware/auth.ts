@@ -18,7 +18,7 @@ export interface AuthRequest extends Request {
 
 // Session-based authentication (validates that user has an active session in database)
 // Supports both cookie-based (web) and header-based (API/CLI) authentication
-export async function authenticateSession(
+export async function authenticate(
   req: AuthRequest,
   res: Response,
   next: NextFunction,
@@ -37,7 +37,6 @@ export async function authenticateSession(
       token = req.cookies["access_token"];
     }
     if (!token) {
-      console.log("the token is no more");
       return res
         .status(401)
         .json({ status: "error", message: "Authentication required" });
@@ -91,6 +90,7 @@ export async function authenticateSession(
 
     next();
   } catch (err) {
+    console.log(err);
     return res
       .status(403)
       .json({ status: "error", message: "Invalid or expired token" });

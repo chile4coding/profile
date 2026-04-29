@@ -8,21 +8,63 @@ import {
   exportProfiles,
 } from "../controllers/profileController";
 import { requireApiVersion } from "../middleware/version";
-import { requireAdmin, requireAnalystOrAdmin } from "../middleware/rbac";
-import { authenticateSession } from "../middleware/auth";
+import { authorizeRole } from "../middleware/rbac";
+import { apiLimiter } from "../middleware/rateLimit";
+import { authenticate } from "../middleware/auth";
 
 const router = Router();
 
-router.use(requireAnalystOrAdmin);
-
 // All profile routes require API version header (except in middleware chain after auth)
-router.use(requireApiVersion);
 
-router.post("/profiles", requireAdmin, createProfile);
-router.get("/profiles", getProfiles);
-router.get("/profiles/search", searchProfiles);
-router.get("/profiles/export", exportProfiles); // Must come BEFORE /profiles/:id
-router.get("/profiles/:id", getProfileById);
-router.delete("/profiles/:id", requireAdmin, deleteProfile);
+router.post(
+  "/profiles",
+
+  apiLimiter,
+  requireApiVersion,
+  authenticate,
+  authorizeRole("admin"),
+
+  createProfile,
+);
+router.get(
+  "/profiles",
+  apiLimiter,
+  requireApiVersion,
+  authenticate,
+  authorizeRole("admin", "analyst"),
+  getProfiles,
+);
+router.get(
+  "/profiles/search",
+  apiLimiter,
+  requireApiVersion,
+  authenticate,
+  authorizeRole("admin", "analyst"),
+  searchProfiles,
+);
+router.get(
+  "/profiles/export",
+  apiLimiter,
+  requireApiVersion,
+  authenticate,
+  authorizeRole("admin", "analyst"),
+  exportProfiles,
+); // Must come BEFORE /profiles/:id
+router.get(
+  "/profiles/:id",
+  apiLimiter,
+  requireApiVersion,
+  authenticate,
+  authorizeRole("admin", "analyst"),
+  getProfileById,
+);
+router.delete(
+  "/profiles/:id",
+  apiLimiter,
+  requireApiVersion,
+  authenticate,
+  authorizeRole("admin"),
+  deleteProfile,
+);
 
 export default router;

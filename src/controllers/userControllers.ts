@@ -5,7 +5,7 @@ import prisma from "../services/db";
 
 export async function getCurrentUser(req: Request, res: Response) {
   try {
-    // This endpoint is protected by authenticateSession middleware
+    // This endpoint is protected by authenticate middleware
     // req.user is already set
     const user = await prisma.user.findUnique({
       where: { id: (req as any).user?.userId },

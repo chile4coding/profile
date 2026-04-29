@@ -13,7 +13,6 @@ import { Pool } from "pg";
 import "dotenv/config";
 // Import to register session type augmentation
 import "./types/session";
-import { authenticateSession } from "./middleware/auth";
 
 const app = express();
 
@@ -38,7 +37,7 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false, //will make this secure once you buy a domain process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production",
       sameSite: "lax" as const,
       maxAge: 5 * 60 * 1000, // 5 minutes - matches OAuth flow timeout
     },
@@ -68,18 +67,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // Request logging
 app.use(requestLogger);
-
-app.use("/auth", authLimiter, authRoutes);
-// Rate limiting for all routes
-// Routes
 app.get("/health", (req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
-app.use(apiLimiter);
-// All profile routes require authentication
-app.use(authenticateSession);
-app.use("/api/users", userRoutes);
 
+app.use("/auth", authRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api", profileRoutes);
 app.use("/api", dashboardRoutes);
 

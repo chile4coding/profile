@@ -1,18 +1,14 @@
 import { Request, Response, NextFunction } from "express";
 
-export function requireApiVersion(
+export const requireApiVersion = (
   req: Request,
   res: Response,
   next: NextFunction,
-) {
-  const version = req.get("X-API-Version");
-
+) => {
+  const version = req.headers["api-version"] || req.headers["x-api-version"];
   if (!version || version !== "1") {
-    return res.status(400).json({
-      status: "error",
-      message: "API version header required",
-    });
+    // ← confirm expected value
+    return res.status(400).json({ error: "API version required" });
   }
-
   next();
-}
+};

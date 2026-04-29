@@ -204,7 +204,7 @@ All `/api/*` endpoints require both authentication AND role enforcement.
 Two middleware layers protect all profile routes (`src/routes/profiles.ts`):
 
 ```typescript
-router.use(authenticateSession); // 1. Verify JWT + active session
+router.use(authenticate); // 1. Verify JWT + active session
 router.use(requireAnalystOrAdmin); // 2. Enforce role >= analyst
 router.use(requireApiVersion); // 3. Require X-API-Version: 1 header
 ```

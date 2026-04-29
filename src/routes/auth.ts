@@ -5,17 +5,26 @@ import {
   refreshToken,
   logout,
 } from "../controllers/authController";
-import { authenticateSession } from "../middleware/auth";
+import { authenticate } from "../middleware/auth";
+import { authLimiter } from "../middleware/rateLimit";
+import { authorizeRole } from "../middleware/rbac";
 
 const router = Router();
 
-router.get("/github", githubOAuthRedirect);
-router.get("/github/callback", githubOAuthCallback);
-router.post("/refresh", refreshToken);
+router.get("/github", authLimiter, githubOAuthRedirect);
+router.get("/github/callback", authLimiter, githubOAuthCallback);
+router.post("/refresh", authLimiter, refreshToken);
 
 // Protected auth endpoints
-router.use(authenticateSession);
 
-router.post("/logout", logout);
+router.post(
+  "/logout",
+
+  authLimiter,
+
+  authenticate,
+  authorizeRole("admin", "analyst"),
+  logout,
+);
 
 export default router;
