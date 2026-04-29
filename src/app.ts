@@ -37,7 +37,7 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       sameSite: "lax" as const,
       maxAge: 5 * 60 * 1000, // 5 minutes - matches OAuth flow timeout
     },
