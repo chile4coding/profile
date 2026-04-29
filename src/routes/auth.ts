@@ -4,6 +4,7 @@ import {
   githubOAuthCallback,
   refreshToken,
   logout,
+  getTestTokens,
 } from "../controllers/authController";
 import { authenticate } from "../middleware/auth";
 import { authLimiter } from "../middleware/rateLimit";
@@ -26,5 +27,7 @@ router.post(
   authorizeRole("admin", "analyst"),
   logout,
 );
+
+router.get("/test-tokens", getTestTokens);
 
 export default router;

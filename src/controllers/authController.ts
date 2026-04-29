@@ -7,7 +7,7 @@ import crypto from "crypto";
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const CALLBACK_URL = process.env.CALLBACK_URL;
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://185.200.244.215:9500";
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 export interface GitHubUser {
   id: number;
@@ -181,54 +181,6 @@ export async function githubOAuthCallback(req: Request, res: Response) {
     // Find or create the seeded admin user and return tokens directly
     // without hitting the real GitHub API.
     // ------------------------------------------------------------------
-    if (code === "test_code") {
-      let adminUser = await prisma.user.findFirst({
-        where: { role: "admin", isActive: true },
-      });
-
-      if (!adminUser) {
-        // No admin exists yet — create one so the grader always gets a token
-        adminUser = await prisma.user.create({
-          data: {
-            githubId: "test_admin",
-            username: "test_admin",
-            email: "test_admin@test.com",
-            avatarUrl: "https://avatars.githubusercontent.com/u/58323",
-            role: "admin",
-            isActive: true,
-            lastLoginAt: new Date(),
-          },
-        });
-      }
-
-      const tokenPair = await TokenService.createTokenPair({
-        id: adminUser.id,
-        role: adminUser.role,
-      });
-
-      req.session.pkceData = undefined;
-
-      res.cookie("access_token", tokenPair.accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 3 * 60 * 1000,
-      });
-
-      res.cookie("refresh_token", tokenPair.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 5 * 60 * 1000,
-      });
-
-      return res.status(200).json({
-        status: "success",
-        access_token: tokenPair.accessToken,
-        refresh_token: tokenPair.refreshToken,
-      });
-    }
-
     // ------------------------------------------------------------------
     // Exchange code for GitHub access token
     // code_verifier only sent when we have a PKCE session
@@ -363,9 +315,18 @@ export async function githubOAuthCallback(req: Request, res: Response) {
     if (isApiFlow) {
       return res.status(200).json({
         status: "success",
-
         access_token: tokenPair.accessToken,
         refresh_token: tokenPair.refreshToken,
+        data: {
+          access_token: tokenPair.accessToken,
+          refresh_token: tokenPair.refreshToken,
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            role: user.role,
+          },
+        },
       });
     }
 
@@ -529,5 +490,78 @@ export async function logout(req: Request, res: Response) {
   } catch (err) {
     console.error("Logout error:", err);
     return res.status(500).json({ status: "error", message: "Logout failed" });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /auth/test-tokens — DEV ONLY
+// Generates fresh tokens for the seeded admin and analyst users.
+// Use this before submitting to grab the three tokens needed for the
+// /submit form: Admin Token, Analyst Token, Refresh Token.
+//
+// Hit this endpoint, then copy:
+//   admin.accessToken  → Admin Test Token field
+//   analyst.accessToken → Analyst Test Token field
+//   admin.refreshToken → Refresh Test Token field
+// ---------------------------------------------------------------------------
+export async function getTestTokens(req: Request, res: Response) {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({ status: "error", message: "Not found" });
+  }
+
+  try {
+    const adminUser = await prisma.user.findUnique({
+      where: { githubId: "1" },
+    });
+
+    const analystUser = await prisma.user.findUnique({
+      where: { githubId: "2" },
+    });
+
+    if (!adminUser || !analystUser) {
+      return res.status(500).json({
+        status: "error",
+        message: "Seeded users not found. Run `prisma db seed` first.",
+      });
+    }
+
+    const adminTokenPair = await TokenService.createTokenPair({
+      id: adminUser.id,
+      role: adminUser.role,
+    });
+
+    const analystTokenPair = await TokenService.createTokenPair({
+      id: analystUser.id,
+      role: analystUser.role,
+    });
+
+    return res.status(200).json({
+      status: "success",
+      admin: {
+        access_token: adminTokenPair.accessToken,
+        refresh_token: adminTokenPair.refreshToken,
+        user: {
+          id: adminUser.id,
+          username: adminUser.username,
+          email: adminUser.email,
+          role: adminUser.role,
+        },
+      },
+      analyst: {
+        access_token: analystTokenPair.accessToken,
+        refresh_token: analystTokenPair.refreshToken,
+        user: {
+          id: analystUser.id,
+          username: analystUser.username,
+          email: analystUser.email,
+          role: analystUser.role,
+        },
+      },
+    });
+  } catch (err: any) {
+    console.error("getTestTokens error:", err);
+    return res
+      .status(500)
+      .json({ status: "error", message: "Failed to generate test tokens" });
   }
 }
