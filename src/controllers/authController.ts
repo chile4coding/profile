@@ -295,14 +295,14 @@ export async function githubOAuthCallback(req: Request, res: Response) {
     // Set cookies — always, so web flow works
     res.cookie("access_token", tokenPair.accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       sameSite: "strict",
       maxAge: 3 * 60 * 1000,
     });
 
     res.cookie("refresh_token", tokenPair.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       sameSite: "strict",
       maxAge: 5 * 60 * 1000,
     });
@@ -422,14 +422,14 @@ export async function refreshToken(req: Request, res: Response) {
 
     res.cookie("access_token", newTokenPair.accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       sameSite: "strict",
       maxAge: 3 * 60 * 1000,
     });
 
     res.cookie("refresh_token", newTokenPair.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       sameSite: "strict",
       maxAge: 5 * 60 * 1000,
     });
