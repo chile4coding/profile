@@ -333,14 +333,14 @@ export async function githubOAuthCallback(req: Request, res: Response) {
 
     res.cookie("access_token", tokenPair.accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       sameSite: "strict",
       maxAge: 3 * 60 * 1000,
     });
 
     res.cookie("refresh_token", tokenPair.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       sameSite: "strict",
       maxAge: 5 * 60 * 1000,
     });
@@ -352,8 +352,8 @@ export async function githubOAuthCallback(req: Request, res: Response) {
     if (isApiFlow) {
       return res.status(200).json({
         status: "success",
-        accessToken: tokenPair.accessToken,
-        refreshToken: tokenPair.refreshToken,
+        access_token: tokenPair.accessToken,
+        refresh_token: tokenPair.refreshToken,
         data: {
           access_token: tokenPair.accessToken,
           refresh_token: tokenPair.refreshToken,
