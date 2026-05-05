@@ -139,3 +139,37 @@ export function parseNaturalLanguageQuery(query: string): ParsedQuery | null {
 
   return hasValidFilter ? result : null;
 }
+
+/**
+ * Normalize parsed query filters into a canonical form for consistent caching.
+ * Ensures that semantically identical queries produce the same cache key.
+ */
+export function normalizeQueryFilters(parsed: ParsedQuery): ParsedQuery {
+  const normalized: ParsedQuery = {};
+
+  // Copy over all fields, ensuring consistent representation
+  if (parsed.gender !== undefined) {
+    normalized.gender = parsed.gender.toLowerCase();
+  }
+
+  if (parsed.age_group !== undefined) {
+    normalized.age_group = parsed.age_group.toLowerCase();
+  }
+
+  if (parsed.country_id !== undefined) {
+    normalized.country_id = parsed.country_id.toUpperCase();
+  }
+
+  // For age ranges, ensure we have both min and max for consistency
+  // If only one is specified, we keep it as is but could optionally set defaults
+  // We keep the explicit values as parsed to maintain query intent
+  if (parsed.min_age !== undefined) {
+    normalized.min_age = parsed.min_age;
+  }
+
+  if (parsed.max_age !== undefined) {
+    normalized.max_age = parsed.max_age;
+  }
+
+  return normalized;
+}

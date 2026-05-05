@@ -3,8 +3,23 @@ import prisma from "../services/db";
 import { enrichProfile } from "../services/enrichment";
 import { classifyAge } from "../utils/classify";
 import { toSnake, toSnakeList } from "../utils/serializer";
-import { parseNaturalLanguageQuery } from "../services/queryParser";
+import {
+  parseNaturalLanguageQuery,
+  normalizeQueryFilters,
+} from "../services/queryParser";
+import {
+  generateProfileCacheKey,
+  getFromCache,
+  setInCache,
+  deleteCacheByPattern,
+} from "../services/cache";
 import { AuthRequest } from "../middleware/auth";
+import fs from "fs";
+import csv from "csv-parser";
+
+import { Transform } from "stream";
+import { pipeline } from "stream/promises";
+import { Readable } from "stream";
 
 type SortField = "age" | "created_at" | "gender_probability";
 type SortOrder = "asc" | "desc";
@@ -26,6 +41,120 @@ interface ProfileQueryParams {
 interface ValidationResult {
   error?: { status: number; message: string };
   params?: ProfileQueryParams;
+}
+
+const CHUNK_SIZE = 5_000;
+
+const CSV_HEADERS = [
+  "id",
+  "name",
+  "gender",
+  "gender_probability",
+  "age",
+  "age_group",
+  "country_id",
+  "country_name",
+  "country_probability",
+  "created_at",
+];
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+type ProfileRow = {
+  id: string;
+  name: string | null;
+  gender: string | null;
+  genderProbability: number | null;
+  age: number | null;
+  ageGroup: string | null;
+  countryId: string | null;
+  countryName: string | null;
+  countryProbability: number | null;
+  createdAt: Date | null;
+};
+
+// ---------------------------------------------------------------------------
+// Cursor-based async generator
+// Uses `id > lastSeenId` instead of skip/offset so Postgres seeks directly
+// to the next page via the primary key index — O(1) cost at any depth.
+// ---------------------------------------------------------------------------
+async function* cursorStream(
+  where: Record<string, unknown>,
+  orderBy: Record<string, string>,
+): AsyncGenerator<ProfileRow[]> {
+  let lastSeenId: string | null = null;
+
+  while (true) {
+    const cursor = lastSeenId ? { ...where, id: { gt: lastSeenId } } : where;
+
+    const chunk: ProfileRow[] = await prisma.profile.findMany({
+      where: cursor,
+      orderBy: [{ id: "asc" }, orderBy], // id must lead for a stable cursor
+      take: CHUNK_SIZE,
+      select: {
+        id: true,
+        name: true,
+        gender: true,
+        genderProbability: true,
+        age: true,
+        ageGroup: true,
+        countryId: true,
+        countryName: true,
+        countryProbability: true,
+        createdAt: true,
+      },
+    });
+
+    if (chunk.length === 0) break;
+
+    yield chunk;
+
+    lastSeenId = chunk[chunk.length - 1].id;
+    if (chunk.length < CHUNK_SIZE) break; // last page
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CSV helpers
+// ---------------------------------------------------------------------------
+function escapeCSV(value: string): string {
+  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function rowToCSV(profile: ProfileRow): string {
+  return [
+    profile.id,
+    profile.name ?? "",
+    profile.gender ?? "",
+    profile.genderProbability?.toString() ?? "",
+    profile.age?.toString() ?? "",
+    profile.ageGroup ?? "",
+    profile.countryId ?? "",
+    profile.countryName ?? "",
+    profile.countryProbability?.toString() ?? "",
+    profile.createdAt ? new Date(profile.createdAt).toISOString() : "",
+  ]
+    .map(escapeCSV)
+    .join(",");
+}
+
+function createCSVTransform(): Transform {
+  return new Transform({
+    writableObjectMode: true, // accepts ProfileRow[] objects
+    readableObjectMode: false, // emits string buffers
+    transform(chunk: ProfileRow[], _encoding, callback) {
+      try {
+        const lines = chunk.map(rowToCSV).join("\n") + "\n";
+        callback(null, lines);
+      } catch (err) {
+        callback(err as Error);
+      }
+    },
+  });
 }
 
 function parseQueryParams(query: Record<string, unknown>): ValidationResult {
@@ -191,15 +320,6 @@ function buildSortClause(params: ProfileQueryParams): Record<string, unknown> {
   return { [field]: order };
 }
 
-function buildExportFilename(baseName: string): string {
-  const timestamp = new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")
-    .replace("T", "_")
-    .split(".")[0];
-  return `${baseName}_${timestamp}.csv`;
-}
-
 export async function createProfile(req: AuthRequest, res: Response) {
   try {
     const { name } = req.body;
@@ -326,6 +446,25 @@ export async function getProfiles(req: AuthRequest, res: Response) {
     }
 
     const params = result.params!;
+
+    // Normalize query filters for consistent caching
+    const normalizedFilters = normalizeQueryFilters(params);
+
+    // Generate cache key
+    const cacheKey = generateProfileCacheKey(
+      normalizedFilters,
+      params.page!,
+      params.limit!,
+      params.sort_by || "created_at",
+      params.order || "asc",
+    );
+
+    // Try to get from cache first
+    const cachedResult = await getFromCache(cacheKey);
+    if (cachedResult) {
+      return res.status(200).json(cachedResult);
+    }
+
     const where = buildWhereClause(params);
     const orderBy = buildSortClause(params);
 
@@ -366,7 +505,7 @@ export async function getProfiles(req: AuthRequest, res: Response) {
         ? `${baseUrl}/profiles?page=${params.page - 1}&limit=${params.limit}${queryParams.toString() ? "&" + queryParams.toString() : ""}`
         : null;
 
-    return res.status(200).json({
+    const resultData = {
       status: "success",
       page: params.page,
       limit: params.limit,
@@ -382,7 +521,12 @@ export async function getProfiles(req: AuthRequest, res: Response) {
           : null,
       },
       data: profiles.map(toSnakeList),
-    });
+    };
+
+    // Cache the result
+    await setInCache(cacheKey, resultData, 300); // 5 minutes TTL
+
+    return res.status(200).json(resultData);
   } catch (err) {
     console.error(err);
     return res
@@ -447,6 +591,24 @@ export async function searchProfiles(req: AuthRequest, res: Response) {
         !isNaN(limit) && limit >= 1 ? Math.min(limit, 50) : 10;
     }
 
+    // Normalize query filters for consistent caching
+    const normalizedFilters = normalizeQueryFilters(queryParams);
+
+    // Generate cache key
+    const cacheKey = generateProfileCacheKey(
+      normalizedFilters,
+      queryParams.page!,
+      queryParams.limit!,
+      queryParams.sort_by || "created_at",
+      queryParams.order || "asc",
+    );
+
+    // Try to get from cache first
+    const cachedResult = await getFromCache(cacheKey);
+    if (cachedResult) {
+      return res.status(200).json(cachedResult);
+    }
+
     const where = buildWhereClause(queryParams);
     const orderBy = buildSortClause(queryParams);
     const skip = (queryParams.page! - 1) * queryParams.limit!;
@@ -476,7 +638,7 @@ export async function searchProfiles(req: AuthRequest, res: Response) {
       }
     });
 
-    return res.status(200).json({
+    const resultData = {
       status: "success",
       page: queryParams.page,
       limit: queryParams.limit,
@@ -494,7 +656,12 @@ export async function searchProfiles(req: AuthRequest, res: Response) {
             : null,
       },
       data: profiles.map(toSnakeList),
-    });
+    };
+
+    // Cache the result
+    await setInCache(cacheKey, resultData, 300); // 5 minutes TTL
+
+    return res.status(200).json(resultData);
   } catch (err) {
     console.error(err);
     return res
@@ -514,62 +681,307 @@ export async function exportProfiles(req: AuthRequest, res: Response) {
       });
     }
 
-    // Build where clause from query params (same as getProfiles)
+    // Parse filters — reuses the same logic as getProfiles
     const result = parseQueryParams(req.query as Record<string, unknown>);
-    const params = result.params || {
-      page: 1,
-      limit: 50,
-    };
+    const params = result.params ?? { page: 1, limit: 50 };
     const where = buildWhereClause(params);
-    const orderBy = buildSortClause(params);
 
-    // Fetch all profiles matching criteria
-    const profiles = await prisma.profile.findMany({
-      where,
-      orderBy,
+    const fieldMap: Record<string, string> = {
+      age: "age",
+      created_at: "createdAt",
+      gender_probability: "genderProbability",
+    };
+    const sortBy = (params.sort_by as string) || "created_at";
+    const order = (params.order as string) || "asc";
+    const orderBy = { [fieldMap[sortBy] ?? "createdAt"]: order };
+
+    // Tell the browser to download a file instead of rendering it
+    const filename = `profiles-export-${Date.now()}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Transfer-Encoding", "chunked"); // stream without a known Content-Length
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.flushHeaders(); // flush headers immediately so the browser starts the download
+
+    // Write CSV header row before the stream starts
+    res.write(CSV_HEADERS.join(",") + "\n");
+
+    // Wire up: DB cursor → CSV transform → HTTP response
+    const source = Readable.from(cursorStream(where, orderBy), {
+      objectMode: true,
+    });
+    const transform = createCSVTransform();
+
+    // If the client disconnects mid-download, abort the DB cursor cleanly
+    req.on("close", () => {
+      source.destroy();
+      transform.destroy();
     });
 
-    // Build CSV
-    const headers = [
-      "id",
-      "name",
-      "gender",
-      "gender_probability",
-      "age",
-      "age_group",
-      "country_id",
-      "country_name",
-      "country_probability",
-      "created_at",
-    ];
-
-    const csvRows = [headers.join(",")];
-
-    for (const profile of profiles) {
-      const row = [
-        profile.id,
-        `"${(profile.name || "").replace(/"/g, '""')}"`,
-        profile.gender || "",
-        profile.genderProbability?.toString() || "",
-        profile.age?.toString() || "",
-        profile.ageGroup || "",
-        profile.countryId || "",
-        `"${(profile.countryName || "").replace(/"/g, '""')}"`,
-        profile.countryProbability?.toString() || "",
-        profile.createdAt ? new Date(profile.createdAt).toISOString() : "",
-      ];
-      csvRows.push(row.join(","));
-    }
-
-    const csvContent = csvRows.join("\n");
-    const filename = buildExportFilename("profiles");
-
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-
-    return res.status(200).send(csvContent);
+    await pipeline(source, transform, res);
   } catch (err) {
     console.error("Export error:", err);
-    return res.status(500).json({ status: "error", message: "Export failed" });
+
+    // Headers already sent — we can't send a JSON error anymore,
+    // so just end the response to avoid hanging the browser download.
+    if (!res.headersSent) {
+      return res
+        .status(500)
+        .json({ status: "error", message: "Export failed" });
+    }
+
+    res.end();
+  }
+}
+
+/**
+ * Upload and process CSV file containing profile data
+ * Handles large files via streaming, validates rows, and inserts in batches
+ */
+export async function uploadProfilesCsv(req: AuthRequest, res: Response) {
+  try {
+    // Check if file was uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        status: "error",
+        message: "No file uploaded",
+      });
+    }
+
+    // Initialize counters
+    let totalRows = 0;
+    let insertedCount = 0;
+    let skippedCount = 0;
+    const skipReasons: Record<string, number> = {
+      duplicate_name: 0,
+      invalid_age: 0,
+      missing_fields: 0,
+      invalid_gender: 0,
+      malformed_row: 0,
+    };
+
+    // Batch processing configuration
+    const batchSize = 1000;
+    const batch: any[] = [];
+    const namesInBatch: string[] = [];
+
+    // Create read stream from uploaded file
+    const fileStream = fs.createReadStream(req.file.path);
+    const csvStream = csv();
+
+    // Process CSV stream
+    await new Promise((resolve, reject) => {
+      fileStream
+        .pipe(csvStream)
+        .on("data", async (row) => {
+          totalRows++;
+
+          // Pause stream while we process this row (to avoid overwhelming memory)
+          csvStream.pause();
+
+          try {
+            // Validate required fields
+            if (!row.name || typeof row.name !== "string" || !row.name.trim()) {
+              skipReasons.missing_fields++;
+              skippedCount++;
+              csvStream.resume();
+              return;
+            }
+
+            const normalizedName = row.name.trim().toLowerCase();
+            if (!normalizedName) {
+              skipReasons.missing_fields++;
+              skippedCount++;
+              csvStream.resume();
+              return;
+            }
+
+            // Validate age if present
+            if (row.age !== undefined && row.age !== "") {
+              const age = parseInt(row.age, 10);
+              if (isNaN(age) || age < 0) {
+                skipReasons.invalid_age++;
+                skippedCount++;
+                csvStream.resume();
+                return;
+              }
+              row.age = age;
+            }
+
+            // Validate gender if present
+            if (row.gender !== undefined && row.gender !== "") {
+              const gender = row.gender.toLowerCase().trim();
+              if (!["male", "female"].includes(gender)) {
+                skipReasons.invalid_gender++;
+                skippedCount++;
+                csvStream.resume();
+                return;
+              }
+              row.gender = gender;
+            }
+
+            // Add to batch for processing
+            batch.push({
+              name: normalizedName,
+              gender: row.gender,
+              age:
+                row.age !== undefined && row.age !== ""
+                  ? parseInt(row.age, 10)
+                  : undefined,
+              // Other fields will be enriched later
+            });
+            namesInBatch.push(normalizedName);
+
+            // Process batch when it reaches batchSize
+            if (batch.length >= batchSize) {
+              await processBatch(batch, namesInBatch, skipReasons);
+              insertedCount += batch.length;
+              batch.length = 0;
+              namesInBatch.length = 0;
+            }
+          } catch (err) {
+            skipReasons.malformed_row++;
+            skippedCount++;
+            console.error("Error processing CSV row:", err);
+          } finally {
+            csvStream.resume();
+          }
+        })
+        .on("end", async () => {
+          // Process remaining rows in batch
+          if (batch.length > 0) {
+            await processBatch(batch, namesInBatch, skipReasons);
+            insertedCount += batch.length;
+          }
+          resolve(true);
+        })
+        .on("error", (error) => {
+          reject(error);
+        });
+    });
+
+    // Clean up uploaded file
+    fs.unlinkSync(req.file.path);
+
+    // Prepare response
+    const response = {
+      status: "success",
+      total_rows: totalRows,
+      inserted: insertedCount,
+      skipped: skippedCount,
+      reasons: {
+        duplicate_name: skipReasons.duplicate_name,
+        invalid_age: skipReasons.invalid_age,
+        missing_fields: skipReasons.missing_fields,
+        invalid_gender: skipReasons.invalid_gender,
+        malformed_row: skipReasons.malformed_row,
+      },
+    };
+
+    (
+      Object.keys(response.reasons) as (keyof typeof response.reasons)[]
+    ).forEach((key) => {
+      if (response.reasons[key] === 0) {
+        delete response.reasons[key];
+      }
+    });
+
+    return res.status(200).json(response);
+  } catch (err) {
+    console.error("CSV upload error:", err);
+    // Try to clean up file if it exists
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    return res.status(500).json({
+      status: "error",
+      message: "Failed to process CSV upload",
+    });
+  }
+}
+
+/**
+ * Process a batch of profile records
+ * Checks for duplicates and inserts valid records
+ */
+async function processBatch(batch: any[], names: string[], skipReasons: any) {
+  try {
+    // Check for existing names in database
+    const existingProfiles = await prisma.profile.findMany({
+      where: {
+        name: {
+          in: names,
+        },
+      },
+      select: {
+        name: true,
+      },
+    });
+
+    const existingNames = new Set(existingProfiles.map((p) => p.name));
+
+    // Filter out duplicates and prepare for insertion
+    const validProfiles: any[] = [];
+
+    for (let i = 0; i < batch.length; i++) {
+      const profileData = batch[i];
+      const name = names[i];
+
+      // Skip if name already exists
+      if (existingNames.has(name)) {
+        skipReasons.duplicate_name++;
+        continue;
+      }
+
+      // Enrich the profile data
+      try {
+        const enriched = await enrichProfile(name);
+        profileData.gender = enriched.gender ?? profileData.gender;
+        profileData.genderProbability = enriched.genderProbability;
+        profileData.age = enriched.age ?? profileData.age;
+        profileData.ageGroup = classifyAge(profileData.age);
+        profileData.countryId = enriched.countryId;
+        profileData.countryProbability = enriched.countryProbability;
+        profileData.countryName = enriched.countryName;
+
+        validProfiles.push({
+          name: profileData.name,
+          gender: profileData.gender,
+          genderProbability: profileData.genderProbability,
+          age: profileData.age,
+          ageGroup: profileData.ageGroup,
+          countryId: profileData.countryId,
+          countryProbability: profileData.countryProbability,
+          countryName: profileData.countryName,
+        });
+      } catch (enrichError) {
+        // If enrichment fails, we still create the profile with available data
+        // Set defaults for missing enriched fields
+        profileData.ageGroup = classifyAge(profileData.age);
+        validProfiles.push({
+          name: profileData.name,
+          gender: profileData.gender,
+          genderProbability: profileData.genderProbability,
+          age: profileData.age,
+          ageGroup: profileData.ageGroup,
+          countryId: profileData.countryId,
+          countryProbability: profileData.countryProbability,
+          countryName: profileData.countryName,
+        });
+      }
+    }
+
+    // Insert valid profiles in batch
+    if (validProfiles.length > 0) {
+      await prisma.profile.createMany({
+        data: validProfiles,
+        skipDuplicates: true, // This will skip duplicates at DB level too
+      });
+    }
+  } catch (error) {
+    console.error("Error processing batch:", error);
+    // If batch fails, we still want to continue with other batches
+    // Individual row errors are handled in the streaming process
+    throw error;
   }
 }

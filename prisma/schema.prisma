@@ -68,5 +68,7 @@ model Profile {
   @@index([countryProbability])
   @@index([createdAt])
   @@index([userId])
+  @@index([gender, countryId, age])
+  @@index([ageGroup, countryId])
   @@map("profiles")
 }
