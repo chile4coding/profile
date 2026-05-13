@@ -14,7 +14,7 @@ const RESERVATION_TTL = 600; // 10 minutes
  * - Hyphens: cannot be leading or trailing
  * - Reserved words blocked
  */
-function validateUsername(username: string): { valid: false; error: string } | { valid: true } {
+export function validateUsername(username: string): { valid: false; error: string } | { valid: true } {
   if (username.length < USERNAME_MIN_LENGTH || username.length > USERNAME_MAX_LENGTH) {
     return { valid: false, error: `Username must be between ${USERNAME_MIN_LENGTH} and ${USERNAME_MAX_LENGTH} characters` };
   }
