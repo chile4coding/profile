@@ -1,8 +1,6 @@
 declare module 'supertest' {
   import { http, Server } from 'node:http';
-  interface SuperTest<T = import('node:http').Server> {
-    (server: T): supertest.Test;
-  }
+  
   namespace supertest {
     interface Test {
       get(path: string): TestAgent;
@@ -18,7 +16,7 @@ declare module 'supertest' {
       attach(field: string, content: Buffer | Stream, filename?: string): Test;
       expect(fn: (res: Response) => boolean): Test;
       expect(status: number): Test;
-      expect(prop: string, val: any): Test;
+      expect(prop: string, val:string): Test;
       end(callback: (err: Error | null, res: Response) => void): Test;
     }
     interface TestAgent {
@@ -31,7 +29,7 @@ declare module 'supertest' {
       options(path: string): Test;
     }
     interface Response extends http.IncomingMessage {
-      body: any;
+      body: unknown ;
       status: number;
       statusCode: number;
       headers: Record<string, string | string[] | undefined>;

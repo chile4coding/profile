@@ -80,7 +80,7 @@ export async function deleteCacheByPattern(pattern: string): Promise<number> {
  * Uses normalized query filters for consistent caching
  */
 export function generateProfileCacheKey(
-  queryFilters: any,
+  queryFilters: unknown,
   page: number,
   limit: number,
   sortBy: string,
