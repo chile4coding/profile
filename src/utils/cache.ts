@@ -1,14 +1,10 @@
 import Redis from "ioredis";
 
 // Create Redis client
-// In production, these would come from environment variables
-const redis = new Redis({
-  host: process.env.REDIS_HOST || "localhost",
-  port: parseInt(process.env.REDIS_PORT || "6379"),
-  password: process.env.REDIS_PASSWORD || undefined,
-  db: parseInt(process.env.REDIS_DB || "0"),
-  keyPrefix: "insighta:",
-});
+// In production, REDIS_URL comes from environment variables
+// Fallback to localhost for development
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const redis = new Redis(redisUrl);
 
 // Default TTL for cached queries (5 minutes)
 const DEFAULT_QUERY_TTL = 5 * 60;
@@ -77,6 +73,8 @@ export async function deleteCacheByPattern(pattern: string): Promise<number> {
   }
 }
 
+
+//  this is test coment
 /**
  * Generate a cache key for profile queries
  * Uses normalized query filters for consistent caching

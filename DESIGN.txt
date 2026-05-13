@@ -1,0 +1,64 @@
+Username check (POST /username/check): Redis is hit first. Cache hit means taken. Cache miss means we go to the database, and only if the DB also says free do we write the reservation into Redis and respond available.
+
+Step 1 — Validation
+Before any I/O the request body is validated synchronously:
+Length: 3 to 30 characters
+Characters: alphanumeric and hyphens only
+Hyphens: cannot be leading or trailing
+Reserved words blocked: api, admin, search, login, signup, help, about
+Failure: 400 Bad Request — invalid format
+
+Step 2 — Redis lookup (cache-first)
+GET username:reserve:{username}
+Key found (hit): name is reserved or taken — return 409 immediately, no DB call
+Key not found (miss): proceed to PostgreSQL
+Redis is sub-millisecond memory access. Any concurrent request for the same name exits here before touching the database.
+
+Step 3 — PostgreSQL lookup (source of truth)
+SELECT id FROM users WHERE username = $1
+Row found: username is permanently taken — return 409
+No row found: name is genuinely free — proceed to reserve
+
+Step 4 — Write reservation to Redis (atomic)
+SET username:reserve:{username}  {userId}  EX 600  NX
+EX 600: 10-minute TTL — abandoned reservations self-expire automatically
+NX: only writes if key does not already exist — the first writer wins atomically
+SET returns OK (NX=1): this request holds the reservation — return 200
+SET returns nil (NX=0): a concurrent request won the race — return 409
+The NX flag handles the race where two requests both miss Redis, both query PostgreSQL, and both see the name as free — all within milliseconds.
+
+Step 5 — Response
+200 OK  { available: true, expiresIn: 600 }
+
+Flow 2 — POST /username/publish
+Triggered when the user completes the profile form and clicks Publish. Because form completion takes time, the Redis reservation may have expired and conditions may have changed. Both layers are re-verified before committing.
+
+Step 1 — Redis reservation verify
+GET username:reserve:{username}
+Key missing: the 10-minute TTL expired during form fill — return 409, user must re-check
+Key exists but value does not match userId: another user holds it — return 409
+Key exists and matches userId: proceed
+
+Step 2 — PostgreSQL final check
+SELECT id FROM users WHERE username = $1
+Mandatory even with a valid Redis key. Time has passed since the original availability check — edge cases exist where the DB may now show the name as taken.
+Row found: name committed by another path — return 409
+No row found: safe to insert
+
+Step 3 — INSERT user record
+INSERT INTO users (email, username, ...) VALUES (...)
+Prisma runs the INSERT. A UNIQUE constraint on the username column is the absolute last line of defence.
+UNIQUE violation: concurrent publish race — the constraint stops all but one, return 409
+Success: proceed to cleanup
+
+Step 4 — Delete Redis reservation key
+DEL username:reserve:{username}
+The reservation is no longer needed once the username is committed. Delete eagerly rather than waiting for the TTL.
+
+Step 5 — Enqueue background job (BullMQ)
+BullMQ enqueues a username.reserved job. The HTTP response does not wait for this.
+Search indexing: add the new username to the search index
+Notifications: trigger welcome or confirmation events
+
+Step 6 — Response
+201 Created  { success: true, profileUrl: '/{username}' }

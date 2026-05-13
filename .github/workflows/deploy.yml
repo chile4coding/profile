@@ -108,17 +108,9 @@ jobs:
             cd ${{ secrets.SERVER_PATH }}
             echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
             echo "PORT=${{ secrets.PORT }}" >> .env
-            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
-            echo "ACCESS_TOKEN_EXPIRES=${{ secrets.ACCESS_TOKEN_EXPIRES }}" >> .env
-            echo "REFRESH_TOKEN_EXPIRES=${{ secrets.REFRESH_TOKEN_EXPIRES }}" >> .env
-            echo "CLIENT_ID=${{ secrets.CLIENT_ID }}" >> .env
-            echo "CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}" >> .env
-            echo "CALLBACK_URL=${{ secrets.CALLBACK_URL }}" >> .env
-            echo "FRONTEND_URL=${{ secrets.FRONTEND_URL }}" >> .env
-            echo "RATE_LIMIT_WINDOW=${{ secrets.RATE_LIMIT_WINDOW }}" >> .env
-            echo "AUTH_RATE_LIMIT=${{ secrets.AUTH_RATE_LIMIT }}" >> .env
-            echo "API_RATE_LIMIT=${{ secrets.API_RATE_LIMIT }}" >> .env
-            echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> .env
+           
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+            echo "REDIS_URL=${{ secrets.REDIS_URL }}" >> .env
             echo "NODE_ENV=production" >> .env
       - name: Install dependencies and migrate on server
         timeout-minutes: 10
