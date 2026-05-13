@@ -1,20 +1,13 @@
 /// <reference types="jest" />
+import request from "supertest";
 
-
-const request: any = require("supertest");
 import prisma from "../config/db";
 import redis from "../utils/cache";
 import app from "../app";
 import { validateUsername } from "../routes/username";
 
 describe("Username Check Endpoint", () => {
-  const TEST_USERNAME = "testuser123";
-  const RESERVED_WORD = "admin";
-  const INVALID_USERNAME = "ab"; // too short
-  const INVALID_CHARS = "user_name"; // underscore not allowed
-  const LEADING_HYPHEN = "-username";
-  const TRAILING_HYPHEN = "username-";
-  const TOO_LONG = "a".repeat(31);
+ 
 
 
 
@@ -55,14 +48,16 @@ describe("Username Check Endpoint", () => {
     it("should reject usernames starting with a hyphen", () => {
       const result = validateUsername("-username");
       expect(result.valid).toBe(false);
-      // @ts-ignore
+
+      // @ts-expect-error result.error exists only when valid === false
       expect(result.error).toContain("cannot start or end with a hyphen");
     });
 
     it("should reject usernames ending with a hyphen", () => {
       const result = validateUsername("username-");
       expect(result.valid).toBe(false);
-      // @ts-ignore
+
+       // @ts-expect-error result.error exists only when valid === false
       expect(result.error).toContain("cannot start or end with a hyphen");
     });
 
@@ -234,7 +229,7 @@ describe("Username Check Endpoint", () => {
 
       const responses = await Promise.all(promises);
 
-      responses.forEach((response, index) => {
+      responses.forEach((response,) => {
         expect(response.status).toBe(200);
         expect(response.body.available).toBe(true);
         expect(response.body.reservationId).toBeDefined();

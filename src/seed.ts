@@ -109,7 +109,7 @@ async function seed() {
   const existingUsers = await prisma.user.findMany({
     select: { username: true },
   });
-  const usedUsernames:Set<string> = new Set(existingUsers.map((u:any) => u.username)) ;
+  const usedUsernames:Set<string> = new Set(existingUsers.map((u:{username:string}) => u.username)) ;
 
   let userSuccessCount = 0;
   let profileSuccessCount = 0;
